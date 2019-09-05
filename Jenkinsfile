@@ -72,6 +72,7 @@ URL_GIT = "https://github.com/krmena8215/spring-petclinic.git"
                   openshift.withProject(PROYECTO) {
                     def app = openshift.newApp("${ SERVICE }:latest")
                     app.narrow("svc").expose();
+
                     def dc = openshift.selector("dc", SERVICE)
 
                     openshift.set("triggers", "dc/ ${ SERVICE }", "--manual")
