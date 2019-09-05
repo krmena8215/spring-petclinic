@@ -1,87 +1,84 @@
-pipeline {
-  agent {
+def version, PROYECTO = "mypockrml", SERVICE = "spring-boot", BRANCH_PROJECT = "master",
+CREDENTIALS_ID = "0b93e6f9-2f68-433f-8ef6-85ed16264194",
+URL_GIT = "https://github.com/krmena8215/spring-petclinic.git"
+     pipeline
+      {
+       agent {
       label 'maven'
-  }
-  stages {
-    stage('Build App') {
-      steps {
-        sh "mvn install"
-      }
-    }
-    stage('Create Image Builder') {
-      when {
-        expression {
-          openshift.withCluster() {
-            return !openshift.selector("bc", "spring-boot").exists();
+        }
+        stages
+        {
+
+                stage('Build App') {
+                  steps
+                   {
+                    git branch: "${BRANCH_PROJECT}",
+                    url: "${URL_GIT}",
+                    credentialsId: "${CREDENTIALS_ID}"
+                    script {
+                        def pom = readMavenPom file: 'pom.xml'
+                        version = pom.version
+                    }
+                    sh "mvn install -DskipTests=true"
+                  }
+                }
+
+          stage('Create Builder Image') {
+            when {
+              expression {
+                openshift.withCluster() {
+                  openshift.withProject(PROYECTO) {
+                    return !openshift.selector("bc", SERVICE).exists();
+                  }
+                }
+              }
+            }
+            steps {
+              script {
+                openshift.withCluster() {
+                  openshift.withProject(PROYECTO) {
+                    openshift.newBuild("--name=${ SERVICE }", "--image-stream=java-alpine:latest","--binary=true", "strategy=docker")
+                  }
+                }
+              }
+            }
+          }
+
+          stage('Build Image') {
+            steps {
+              script {
+                openshift.withCluster() {
+                  openshift.withProject(PROYECTO) {
+                    openshift.selector("bc", SERVICE).startBuild("--from-dir=.","--follow")
+                  }
+                }
+              }
+            }
+          }
+
+          stage('Create and deploy dev') {
+            when {
+              expression {
+                openshift.withCluster() {
+                  openshift.withProject(PROYECTO) {
+                    return !openshift.selector('dc', SERVICE).exists()
+                  }
+                }
+              }
+            }
+            steps {
+              script {
+                openshift.withCluster() {
+                  openshift.withProject(PROYECTO) {
+                    def app = openshift.newApp("${ SERVICE }:latest")
+                    app.narrow("svc").expose();
+                    def dc = openshift.selector("dc", SERVICE)
+
+                    openshift.set("triggers", "dc/ ${ SERVICE }", "--manual")
+                  }
+                }
+              }
+            }
           }
         }
       }
-      steps {
-        script {
-          openshift.withCluster() {
-            openshift.newBuild("--name=spring-boot", "--image-stream=openjdk-8-rhel8:latest", "--binary")
-          }
-        }
-      }
-    }
-    stage('Build Image') {
-      steps {
-        script {
-          openshift.withCluster() {
-            openshift.selector("bc", "mapit").startBuild("--from-file=target/spring-boot.jar", "--wait")
-          }
-        }
-      }
-    }
-    stage('Promote to DEV') {
-      steps {
-        script {
-          openshift.withCluster() {
-            openshift.tag("spring-boot:latest", "spring-boot:dev")
-          }
-        }
-      }
-    }
-    stage('Create DEV') {
-      when {
-        expression {
-          openshift.withCluster() {
-            return !openshift.selector('dc', 'spring-boot-dev').exists()
-          }
-        }
-      }
-      steps {
-        script {
-          openshift.withCluster() {
-            openshift.newApp("spring-boot:latest", "--name=spring-boot-dev").narrow('svc').expose()
-          }
-        }
-      }
-    }
-    stage('Promote STAGE') {
-      steps {
-        script {
-          openshift.withCluster() {
-            openshift.tag("spring-boot:dev", "spring-boot:stage")
-          }
-        }
-      }
-    }
-    stage('Create STAGE') {
-      when {
-        expression {
-          openshift.withCluster() {
-            return !openshift.selector('dc', 'spring-boot-stage').exists()
-          }
-        }
-      }
-      steps {
-        script {
-          openshift.withCluster() {
-            openshift.newApp("spring-boot:stage", "--name=spring-boot-stage").narrow('svc').expose()
-          }
-        }
-      }
-    }
-  }
-}

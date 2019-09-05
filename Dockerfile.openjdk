@@ -1,0 +1,7 @@
+FROM docker.io/openjdk:8-jre-slim
+
+EXPOSE 8080
+
+ADD target/spring-petclinic.jar /spring-petclinic.jar
+
+CMD ["/usr/local/openjdk-8/bin/java", "-jar", "/spring-petclinic.jar"]
